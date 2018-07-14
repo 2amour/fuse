@@ -40,6 +40,7 @@ include_directories(
 # fuse_constraints library
 add_library(${PROJECT_NAME}
   src/absolute_pose_2d_stamped_constraint.cpp
+  src/absolute_orientation_3d_stamped_constraint.cpp
   src/normal_delta.cpp
   src/normal_delta_orientation_2d.cpp
   src/normal_prior_orientation_2d.cpp
@@ -102,6 +103,18 @@ if(CATKIN_ENABLE_TESTING)
     ${catkin_EXPORTED_TARGETS}
   )
   target_link_libraries(test_absolute_pose_2d_stamped_constraint
+    ${PROJECT_NAME}
+    ${catkin_LIBRARIES}
+  )
+
+  # Absolute Pose 2D Stamped Constraint Tests
+  catkin_add_gtest(test_absolute_orientation_3d_stamped_constraint
+    test/test_absolute_orientation_3d_stamped_constraint.cpp
+  )
+  add_dependencies(test_absolute_orientation_3d_stamped_constraint
+    ${catkin_EXPORTED_TARGETS}
+  )
+  target_link_libraries(test_absolute_orientation_3d_stamped_constraint
     ${PROJECT_NAME}
     ${catkin_LIBRARIES}
   )
