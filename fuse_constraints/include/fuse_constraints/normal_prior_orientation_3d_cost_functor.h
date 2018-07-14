@@ -35,7 +35,9 @@
 #define FUSE_CONSTRAINTS_NORMAL_PRIOR_POSE_3D_COST_FUNCTOR_H
 
 #include <fuse_constraints/util.h>
+#include <fuse_variables/orientation_3d_stamped.h>
 
+#include <angles/angles.h>
 #include <ceres/internal/disable_warnings.h>
 #include <ceres/internal/eigen.h>
 #include <ceres/rotation.h>
@@ -86,31 +88,21 @@ public:
   template <typename T>
   bool operator()(const T* const orientation, T* residuals) const
   {
-    T inverse_quaternion[4] =
-    {
-      orientation[0],
-      -orientation[1],
-      -orientation[2],
-      -orientation[3]
-    };
+    using fuse_variables::Orientation3DStamped;
 
-    T observation[4] =
-    {
-      T(b_(0)),
-      T(b_(1)),
-      T(b_(2)),
-      T(b_(3))
-    };
+    T roll1 = Orientation3DStamped::getRoll(orientation[0], orientation[1], orientation[2], orientation[3]);
+    T pitch1 = Orientation3DStamped::getPitch(orientation[0], orientation[1], orientation[2], orientation[3]);
+    T yaw1 = Orientation3DStamped::getYaw(orientation[0], orientation[1], orientation[2], orientation[3]);
 
-    T output[4];
-
-    ceres::QuaternionProduct(observation, inverse_quaternion, output);
+    T roll2 = T(Orientation3DStamped::getRoll(b_(0), b_(1), b_(2), b_(3)));
+    T pitch2 = T(Orientation3DStamped::getPitch(b_(0), b_(1), b_(2), b_(3)));
+    T yaw2 = T(Orientation3DStamped::getYaw(b_(0), b_(1), b_(2), b_(3)));
 
     // Residual can just be the imaginary components
     Eigen::Map<Eigen::Matrix<T, 3, 1> > residuals_map(residuals);
-    residuals_map(0) = output[1];
-    residuals_map(1) = output[2];
-    residuals_map(2) = output[3];
+    residuals_map(0) = wrapAngle2D(roll2 - roll1);
+    residuals_map(1) = wrapAngle2D(pitch2 - pitch1);
+    residuals_map(2) = wrapAngle2D(yaw2 - yaw1);
 
     // Scale the residuals by the square root information matrix to account for
     // the measurement uncertainty.

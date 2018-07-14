@@ -59,6 +59,14 @@ void wrapAngle2D(T& angle)
   angle -= TAU * ceres::floor((angle + PI) / TAU);
 }
 
+template<typename T>
+T wrapAngle2D(const T& angle)
+{
+  T wrapped = angle;
+  wrapAngle2D(wrapped);
+  return wrapped;
+}
+
 /**
  * @brief Create an 2x2 rotation matrix from an angle
  *

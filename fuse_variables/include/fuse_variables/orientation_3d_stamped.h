@@ -37,6 +37,8 @@
 #include <fuse_core/macros.h>
 #include <fuse_core/uuid.h>
 #include <fuse_variables/fixed_size_variable.h>
+
+#include <ceres/jet.h>
 #include <ros/time.h>
 
 #include <ostream>
@@ -89,15 +91,49 @@ public:
    */
   explicit Orientation3DStamped(const ros::Time& stamp, const fuse_core::UUID &hardware_id = fuse_core::uuid::NIL);
 
+  template <typename T>
+  static inline T getPitch(const T w, const T x, const T y, const T z)
+  {
+    // Adapted from https://en.wikipedia.org/wiki/Conversion_between_quaternions_and_Euler_angles
+    const T sin_pitch = T(2.0) * (w * y - z * x);
+
+    if (ceres::abs(sin_pitch) >= T(1.0))
+    {
+      return (sin_pitch > T(0.0) ? T(1.0) : T(-1.0)) * T(M_PI / 2.0);
+    }
+    else
+    {
+      return ceres::asin(sin_pitch);
+    }
+  }
+
+  template <typename T>
+  static inline T getRoll(const T w, const T x, const T y, const T z)
+  {
+    // Adapted from https://en.wikipedia.org/wiki/Conversion_between_quaternions_and_Euler_angles
+    const T sin_roll = T(2.0) * (w * x + y * z);
+    const T cos_roll = T(1.0) - (T(2.0) * (x * x + y * y));
+    return ceres::atan2(sin_roll, cos_roll);
+  }
+
+  template <typename T>
+  static inline T getYaw(const T w, const T x, const T y, const T z)
+  {
+    // Adapted from https://en.wikipedia.org/wiki/Conversion_between_quaternions_and_Euler_angles
+    const T sin_yaw = T(2.0) * (w * z + x * y);
+    const T cos_yaw = T(1.0) - (T(2.0) * (y * y + z * z));
+    return ceres::atan2(sin_yaw, cos_yaw);
+  }
+
   /**
    * @brief Read-only access to quaternion's Euler pitch angle component
    */
-  double pitch();
+  double pitch() { return getPitch(w(), x(), y(), z()); }
 
   /**
    * @brief Read-only access to quaternion's Euler roll angle component
    */
-  double roll();
+  double roll() { return getRoll(w(), x(), y(), z()); }
 
   /**
    * @brief Read-write access to the quaternion w component
@@ -132,7 +168,7 @@ public:
   /**
    * @brief Read-only access to quaternion's Euler yaw angle component
    */
-  double yaw();
+  double yaw() { return getYaw(w(), x(), y(), z()); }
 
   /**
    * @brief Read-write access to the quaternion z component
