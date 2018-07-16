@@ -89,20 +89,49 @@ public:
   bool operator()(const T* const orientation, T* residuals) const
   {
     using fuse_variables::Orientation3DStamped;
+  
+    // 1. Compute the delta quaternion
+    T inverse_quaternion[4] =
+    {
+      orientation[0],
+      -orientation[1],
+      -orientation[2],
+      -orientation[3]
+    };
 
-    T roll1 = Orientation3DStamped::getRoll(orientation[0], orientation[1], orientation[2], orientation[3]);
-    T pitch1 = Orientation3DStamped::getPitch(orientation[0], orientation[1], orientation[2], orientation[3]);
-    T yaw1 = Orientation3DStamped::getYaw(orientation[0], orientation[1], orientation[2], orientation[3]);
+    T observation[4] =
+    {
+      T(b_(0)),
+      T(b_(1)),
+      T(b_(2)),
+      T(b_(3))
+    };
 
-    T roll2 = T(Orientation3DStamped::getRoll(b_(0), b_(1), b_(2), b_(3)));
-    T pitch2 = T(Orientation3DStamped::getPitch(b_(0), b_(1), b_(2), b_(3)));
-    T yaw2 = T(Orientation3DStamped::getYaw(b_(0), b_(1), b_(2), b_(3)));
+    T output[4];
 
-    // Residual can just be the imaginary components
+    ceres::QuaternionProduct(observation, inverse_quaternion, output);
+
+    // Get the relevant components
     Eigen::Map<Eigen::Matrix<T, 3, 1> > residuals_map(residuals);
-    residuals_map(0) = wrapAngle2D(roll2 - roll1);
-    residuals_map(1) = wrapAngle2D(pitch2 - pitch1);
-    residuals_map(2) = wrapAngle2D(yaw2 - yaw1);
+    T roll_diff = Orientation3DStamped::getRoll(output[0], output[1], output[2], output[3]);  // using_roll ? that_value : 0
+    T pitch_diff = Orientation3DStamped::getPitch(output[0], output[1], output[2], output[3]);
+    T yaw_diff = Orientation3DStamped::getYaw(output[0], output[1], output[2], output[3]);
+
+    T cy = ceres::cos(yaw_diff * 0.5);
+    T sy = ceres::sin(yaw_diff * 0.5);
+    T cr = ceres::cos(roll_diff * 0.5);
+    T sr = ceres::sin(roll_diff * 0.5);
+    T cp = ceres::cos(pitch_diff * 0.5);
+    T sp = ceres::sin(pitch_diff * 0.5);
+
+    output[0] = cy * cr * cp + sy * sr * sp;
+    output[1] = cy * sr * cp - sy * cr * sp;
+    output[2] = cy * cr * sp + sy * sr * cp;
+    output[3] = sy * cr * cp - cy * sr * sp;
+
+    residuals_map(0) = output[1];
+    residuals_map(1) = output[2];
+    residuals_map(2) = output[3];
 
     // Scale the residuals by the square root information matrix to account for
     // the measurement uncertainty.
