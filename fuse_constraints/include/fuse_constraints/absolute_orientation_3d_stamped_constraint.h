@@ -62,6 +62,8 @@ class AbsoluteOrientation3DStampedConstraint : public fuse_core::Constraint
 public:
   SMART_PTR_DEFINITIONS(AbsoluteOrientation3DStampedConstraint);
 
+  using Euler = fuse_variables::Orientation3DStamped::Euler;
+
   /**
    * @brief Create a constraint using a measurement/prior of a 3D orientation
    *
@@ -72,7 +74,8 @@ public:
   AbsoluteOrientation3DStampedConstraint(
     const fuse_variables::Orientation3DStamped& orientation,
     const Eigen::Vector4d& mean,
-    const Eigen::Matrix3d& covariance);
+    const Eigen::MatrixXd& covariance,
+    const std::vector<Euler> &axes = {Euler::ROLL, Euler::PITCH, Euler::YAW});
 
   /**
    * @brief Create a constraint using a measurement/prior of a 3D orientation
@@ -84,7 +87,8 @@ public:
   AbsoluteOrientation3DStampedConstraint(
     const fuse_variables::Orientation3DStamped& orientation,
     const Eigen::Quaterniond& mean,
-    const Eigen::Matrix3d& covariance);
+    const Eigen::MatrixXd& covariance,
+    const std::vector<Euler> &axes = {Euler::ROLL, Euler::PITCH, Euler::YAW});
 
   /**
    * @brief Create a constraint using a measurement/prior of a 3D orientation
@@ -96,7 +100,8 @@ public:
   AbsoluteOrientation3DStampedConstraint(
     const fuse_variables::Orientation3DStamped& orientation,
     const geometry_msgs::Quaternion& mean,
-    const std::array<double, 9>& covariance);
+    const std::array<double, 9>& covariance,
+    const std::vector<Euler> &axes = {Euler::ROLL, Euler::PITCH, Euler::YAW});
 
   /**
    * @brief Destructor
@@ -115,14 +120,14 @@ public:
    *
    * Order is (roll, pitch, yaw)
    */
-  const Eigen::Matrix3d& sqrtInformation() const { return sqrt_information_; }
+  const Eigen::MatrixXd& sqrtInformation() const { return sqrt_information_; }
 
   /**
    * @brief Compute the measurement covariance matrix.
    *
    * Order is (roll, pitch, yaw)
    */
-  Eigen::Matrix3d covariance() const { return (sqrt_information_.transpose() * sqrt_information_).inverse(); }
+  Eigen::MatrixXd covariance() const;
 
   /**
    * @brief Print a human-readable description of the constraint to the provided stream.
@@ -174,7 +179,8 @@ protected:
   static Eigen::Matrix3d toEigen(const std::array<double, 9> covariance);
 
   Eigen::Vector4d mean_;  //!< The measured/prior mean vector for this variable
-  Eigen::Matrix3d sqrt_information_;  //!< The square root information matrix
+  Eigen::MatrixXd sqrt_information_;  //!< The square root information matrix
+  std::vector<Euler> axes_;
 };
 
 }  // namespace fuse_constraints

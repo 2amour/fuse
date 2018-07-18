@@ -99,7 +99,7 @@ public:
 
     if (ceres::abs(sin_pitch) >= T(1.0))
     {
-      return (sin_pitch > T(0.0) ? T(1.0) : T(-1.0)) * T(M_PI / 2.0);
+      return (sin_pitch >= T(0.0) ? T(1.0) : T(-1.0)) * T(M_PI / 2.0);
     }
     else
     {

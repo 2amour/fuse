@@ -48,19 +48,25 @@ namespace fuse_constraints
 {
 
 /**
- * @brief Create a prior cost function on both the position and orientation variables at once.
+ * @brief Create a prior cost function on a 3D orientation variable (quaternion)
  *
  * The Ceres::NormalPrior cost function only supports a single variable. This is a convenience cost function that
- * applies a prior constraint on both the position and orientation variables at once.
+ * applies a prior constraint on a 3D orientation.
  *
  * The cost function is of the form:
  *
- *             ||    [  x - b(0)] ||^2
- *   cost(x) = ||A * [  y - b(1)] ||
- *             ||    [yaw - b(2)] ||
+ *             ||    [  x - b(1)] ||^2
+ *   cost(x) = ||A * [  y - b(2)] ||
+ *             ||    [  z - b(3)] ||
  *
- * where, the matrix A and the vector b are fixed and (x, y, yaw) are the components of the position and orientation
- * variables. In case the user is interested in implementing a cost function of the form
+ * where, the matrix A and the vector b are fixed and (w, x, y, z) are the components of the 3D orientation
+ * (quaternion) variable. Note that the cost function does not include the real-valued component of the quaternion,
+ * but only its imaginary components.
+ * 
+ * The functor can also compute the cost of a subset of the equivalent Euler axes (roll, pitch, or yaw), in the event
+ * that we are not interested in all the Euler angles represented by the quaternion.
+ * 
+ * In case the user is interested in implementing a cost function of the form
  *
  *   cost(X) = (X - mu)^T S^{-1} (X - mu)
  *
@@ -70,16 +76,32 @@ namespace fuse_constraints
 class NormalPriorOrientation3DCostFunctor
 {
 public:
+  using Euler = fuse_variables::Orientation3DStamped::Euler;
+
   /**
    * @brief Construct a cost function instance
    *
    * @param[in] A The residual weighting matrix, most likely the square root information matrix in order (x, y, yaw)
    * @param[in] b The pose measurement or prior in order (w, x, y, z)
+   * @param[in] axes - The Euler angle axes for which we want to compute errors. Defaults to all axes.
    */
-  NormalPriorOrientation3DCostFunctor(const Eigen::Matrix3d& A, const Eigen::Vector4d& b)  :
-    A_(A),
-    b_(b)
+  NormalPriorOrientation3DCostFunctor(
+    const Eigen::MatrixXd& A,
+    const Eigen::Vector4d& b,
+    const std::vector<Euler> &axes = {Euler::ROLL, Euler::PITCH, Euler::YAW}) :
+      A_(A),
+      b_(b),
+      all_axes_(false),
+      update_vector_(3, false)
   {
+    // Cache which axes are set to true, and whether all are set to true
+    for_each(
+      axes.begin(),
+      axes.end(),
+      [this](const Euler &axis){ update_vector_[size_t(axis) - size_t(Euler::ROLL)] = 1.0; });
+
+    std::vector<Euler> axes_tmp = axes;
+    all_axes_ = (axes.size() == 3 && std::unique(axes_tmp.begin(), axes_tmp.end()) == axes_tmp.end());
   }
 
   /**
@@ -111,38 +133,44 @@ public:
 
     ceres::QuaternionProduct(observation, inverse_quaternion, output);
 
-    // Get the relevant components
-    Eigen::Map<Eigen::Matrix<T, 3, 1> > residuals_map(residuals);
-    T roll_diff = Orientation3DStamped::getRoll(output[0], output[1], output[2], output[3]);  // using_roll ? that_value : 0
-    T pitch_diff = Orientation3DStamped::getPitch(output[0], output[1], output[2], output[3]);
-    T yaw_diff = Orientation3DStamped::getYaw(output[0], output[1], output[2], output[3]);
+    std::vector<T> residuals_tmp(A_.cols(), T(0));
 
-    T cy = ceres::cos(yaw_diff * 0.5);
-    T sy = ceres::sin(yaw_diff * 0.5);
-    T cr = ceres::cos(roll_diff * 0.5);
-    T sr = ceres::sin(roll_diff * 0.5);
-    T cp = ceres::cos(pitch_diff * 0.5);
-    T sp = ceres::sin(pitch_diff * 0.5);
+    // 2. Map the double array to an Eigen matrix (vector)
+    Eigen::Map<Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic> > residuals_map(residuals, A_.rows(), 1);
+    Eigen::Map<Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic> > residuals_tmp_map(residuals_tmp.data(), A_.cols(), 1);
 
-    output[0] = cy * cr * cp + sy * sr * sp;
-    output[1] = cy * sr * cp - sy * cr * sp;
-    output[2] = cy * cr * sp + sy * sr * cp;
-    output[3] = sy * cr * cp - cy * sr * sp;
+    if (all_axes_)
+    {
+      // 3a. If we're using all the axes, just use the imaginary coefficients as the residual
+      residuals_tmp_map(0) = output[1];
+      residuals_tmp_map(1) = output[2];
+      residuals_tmp_map(2) = output[3];
+    }
+    else
+    {
+      // 3b. If we're using some subset of the axes, separate them into Euler angles, zero out the components that we
+      // don't want, and then convert the angles back to a quaternion.
+      T roll_diff = Orientation3DStamped::getRoll(output[0], output[1], output[2], output[3]);
+      T pitch_diff = Orientation3DStamped::getPitch(output[0], output[1], output[2], output[3]);
+      T yaw_diff = Orientation3DStamped::getYaw(output[0], output[1], output[2], output[3]);
 
-    residuals_map(0) = output[1];
-    residuals_map(1) = output[2];
-    residuals_map(2) = output[3];
+      const size_t base_ind = size_t(Euler::ROLL);
+      residuals_tmp_map(size_t(Euler::ROLL) - base_ind) = roll_diff;
+      residuals_tmp_map(size_t(Euler::PITCH) - base_ind) = pitch_diff;
+      residuals_tmp_map(size_t(Euler::YAW) - base_ind) = yaw_diff;
+    }
 
-    // Scale the residuals by the square root information matrix to account for
-    // the measurement uncertainty.
-    residuals_map = A_.template cast<T>() * residuals_map;
+    // 4. Scale the residuals by the square root information matrix to account for the measurement uncertainty.
+    residuals_map = A_.template cast<T>() * residuals_tmp_map;
 
     return true;
   }
 
 private:
-  Eigen::Matrix3d A_;  //!< The residual weighting matrix, most likely the square root information matrix
+  Eigen::MatrixXd A_;  //!< The residual weighting matrix, most likely the square root information matrix
   Eigen::Vector4d b_;  //!< The measured 3D orientation (quaternion) value
+  bool all_axes_;
+  std::vector<double> update_vector_;
 };
 
 }  // namespace fuse_constraints
